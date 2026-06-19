@@ -1,0 +1,660 @@
+@page "/"
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>Usuarios - UserManagement</PageTitle>
+
+<div class="container py-4">
+    <!-- Header principal -->
+    <div class="row align-items-center mb-4">
+        <div class="col-md-8">
+            <h1 class="h2 text-dark font-weight-bold mb-1 fw-bold text-gradient">Gestión de Usuarios</h1>
+            <p class="text-secondary mb-0">Visualizá, creá, editá y gestioná el acceso de los usuarios</p>
+        </div>
+        <div class="col-md-4 text-md-end mt-3 mt-md-0">
+            <button class="btn btn-action-primary shadow-sm fw-semibold d-inline-flex align-items-center gap-2 px-4 py-2" @onclick="OpenCreateModal">
+                <i class="bi bi-person-plus-fill fs-5"></i> Nuevo Usuario
+            </button>
+        </div>
+    </div>
+
+    <!-- Alerta de mensajes -->
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-custom-danger alert-dismissible fade show shadow-sm d-flex align-items-center gap-3" role="alert">
+            <i class="bi bi-exclamation-triangle-fill fs-4 text-danger"></i>
+            <div>
+                <strong class="d-block text-danger-emphasis">Hubo un problema</strong>
+                <span class="text-danger-emphasis">@errorMessage</span>
+            </div>
+            <button type="button" class="btn-close ms-auto" @onclick="() => errorMessage = string.Empty"></button>
+        </div>
+    }
+
+    <!-- Tarjetas de estadísticas -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="stat-card p-3 shadow-sm border-0 bg-white">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon bg-primary-soft text-primary">
+                        <i class="bi bi-people-fill"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted d-block font-size-sm">Total</span>
+                        <h4 class="fw-bold mb-0">@(users?.Count ?? 0)</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card p-3 shadow-sm border-0 bg-white">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon bg-success-soft text-success">
+                        <i class="bi bi-shield-fill-check"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted d-block font-size-sm">Activos</span>
+                        <h4 class="fw-bold mb-0">@(users?.Count(u => u.IsActive) ?? 0)</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card p-3 shadow-sm border-0 bg-white">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon bg-secondary-soft text-secondary">
+                        <i class="bi bi-shield-fill-x"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted d-block font-size-sm">Inactivos</span>
+                        <h4 class="fw-bold mb-0">@(users?.Count(u => !u.IsActive) ?? 0)</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card p-3 shadow-sm border-0 bg-white">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="stat-icon bg-warning-soft text-warning">
+                        <i class="bi bi-award-fill"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted d-block font-size-sm">Admins</span>
+                        <h4 class="fw-bold mb-0">@(users?.Count(u => u.Role == "Administrador") ?? 0)</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Buscador y herramientas de filtro -->
+    <div class="card shadow-sm border-0 p-3 mb-4 bg-white">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-6">
+                <div class="input-group search-box">
+                    <span class="input-group-text bg-light border-0">
+                        <i class="bi bi-search text-muted"></i>
+                    </span>
+                    <input type="text" class="form-control bg-light border-0 py-2" placeholder="Buscar por nombre, correo electrónico o rol..." @bind="searchQuery" @bind:event="oninput" />
+                </div>
+            </div>
+            <div class="col-md-6 text-md-end text-muted font-size-sm">
+                @if (users != null)
+                {
+                    <span>Mostrando @FilteredUsers.Count() de @users.Count usuarios</span>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Estado de carga -->
+    @if (isLoading)
+    {
+        <div class="d-flex flex-column align-items-center justify-content-center my-5 py-5">
+            <div class="spinner-custom mb-3"></div>
+            <span class="text-secondary fw-semibold">Obteniendo datos del servidor SQLite...</span>
+        </div>
+    }
+    else if (users == null || !users.Any())
+    {
+        <!-- Vista vacía -->
+        <div class="card text-center p-5 border-dashed bg-white shadow-sm mx-auto" style="max-width: 600px;">
+            <div class="card-body py-5">
+                <div class="empty-state-icon bg-light text-muted mb-4 mx-auto">
+                    <i class="bi bi-people-fill"></i>
+                </div>
+                <h3 class="fw-bold text-dark mb-2">No hay usuarios disponibles</h3>
+                <p class="text-secondary mb-4 mx-auto" style="max-width: 450px;">
+                    La base de datos SQLite está vacía o el archivo JSON no ha sido inicializado correctamente.
+                </p>
+                <button class="btn btn-action-primary shadow-sm fw-semibold" @onclick="OpenCreateModal">
+                    <i class="bi bi-person-plus-fill"></i> Crear Primer Usuario
+                </button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Tabla de usuarios -->
+        <div class="card shadow-sm border-0 bg-white overflow-hidden rounded-3">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="ps-4 py-3 text-uppercase text-secondary fw-bold font-size-xs">ID</th>
+                            <th scope="col" class="py-3 text-uppercase text-secondary fw-bold font-size-xs">Usuario</th>
+                            <th scope="col" class="py-3 text-uppercase text-secondary fw-bold font-size-xs">Correo Electrónico</th>
+                            <th scope="col" class="py-3 text-uppercase text-secondary fw-bold font-size-xs">Rol</th>
+                            <th scope="col" class="py-3 text-uppercase text-secondary fw-bold font-size-xs">Estado</th>
+                            <th scope="col" class="py-3 text-uppercase text-secondary fw-bold font-size-xs">Creado el</th>
+                            <th scope="col" class="pe-4 py-3 text-uppercase text-secondary fw-bold font-size-xs text-end">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in FilteredUsers)
+                        {
+                            <tr>
+                                <td class="ps-4 fw-bold text-secondary">#@user.Id</td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar-circle me-3 @GetAvatarColorClass(user.Name)">
+                                            @user.Name.Substring(0, Math.Min(2, user.Name.Length)).ToUpper()
+                                        </div>
+                                        <div>
+                                            <span class="fw-bold text-dark d-block">@user.Name</span>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td><span class="text-secondary font-size-sm">@user.Email</span></td>
+                                <td>
+                                    <span class="badge badge-custom @GetRoleBadgeClass(user.Role)">
+                                        @user.Role
+                                    </span>
+                                </td>
+                                <td>
+                                    @if (user.IsActive)
+                                    {
+                                        <span class="badge badge-custom bg-success-soft text-success d-inline-flex align-items-center gap-1">
+                                            <span class="pulse-indicator bg-success"></span>
+                                            Activo
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-custom bg-secondary-soft text-secondary d-inline-flex align-items-center gap-1">
+                                            <span class="pulse-indicator bg-secondary"></span>
+                                            Inactivo
+                                        </span>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="text-secondary font-size-sm">@user.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                                </td>
+                                <td class="pe-4 text-end">
+                                    <div class="d-inline-flex gap-2">
+                                        <button class="btn btn-icon-edit" @onclick="() => OpenEditModal(user)" title="Editar usuario">
+                                            <i class="bi bi-pencil-fill"></i>
+                                        </button>
+                                        <button class="btn btn-icon-delete" @onclick="() => DeleteUser(user.Id)" title="Eliminar usuario">
+                                            <i class="bi bi-trash-fill"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Modal para Crear/Editar Usuario -->
+@if (showModal)
+{
+    <div class="custom-modal-backdrop" @onclick="CloseModal"></div>
+    <div class="custom-modal-dialog">
+        <div class="card border-0 shadow-lg modal-content-anim">
+            <div class="card-header bg-dark text-white p-3 d-flex align-items-center justify-content-between">
+                <h5 class="mb-0 fw-bold d-flex align-items-center gap-2">
+                    <i class="@(isEditing ? "bi bi-pencil-square" : "bi bi-person-plus-fill") fs-5"></i>
+                    @(isEditing ? "Editar Usuario" : "Registrar Nuevo Usuario")
+                </h5>
+                <button type="button" class="btn-close btn-close-white" @onclick="CloseModal" aria-label="Close"></button>
+            </div>
+            <EditForm Model="editingUser" OnValidSubmit="SaveUser">
+                <DataAnnotationsValidator />
+                <div class="card-body p-4">
+                    <div class="mb-3">
+                        <label for="name" class="form-label fw-bold text-secondary">Nombre Completo</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light"><i class="bi bi-person text-muted"></i></span>
+                            <InputText id="name" class="form-control py-2" @bind-Value="editingUser.Name" placeholder="Ej: Santi Cussit" />
+                        </div>
+                        <ValidationMessage For="() => editingUser.Name" class="text-danger font-size-xs mt-1" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="email" class="form-label fw-bold text-secondary">Correo Electrónico</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light"><i class="bi bi-envelope text-muted"></i></span>
+                            <InputText id="email" type="email" class="form-control py-2" @bind-Value="editingUser.Email" placeholder="correo@ejemplo.com" />
+                        </div>
+                        <ValidationMessage For="() => editingUser.Email" class="text-danger font-size-xs mt-1" />
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="role" class="form-label fw-bold text-secondary">Rol del Sistema</label>
+                            <InputSelect id="role" class="form-select py-2" @bind-Value="editingUser.Role">
+                                <option value="Usuario">Usuario</option>
+                                <option value="Administrador">Administrador</option>
+                                <option value="Editor">Editor</option>
+                                <option value="Soporte">Soporte</option>
+                            </InputSelect>
+                            <ValidationMessage For="() => editingUser.Role" class="text-danger font-size-xs mt-1" />
+                        </div>
+
+                        <div class="col-md-6 mb-3 d-flex align-items-end pb-1">
+                            <div class="form-check form-switch custom-switch bg-light p-3 rounded border w-100">
+                                <InputCheckbox id="isActive" class="form-check-input ms-0 me-3" @bind-Value="editingUser.IsActive" />
+                                <label class="form-check-label fw-semibold text-secondary" for="isActive">Usuario Activo</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-light p-3 text-end d-flex gap-2 justify-content-end">
+                    <button type="button" class="btn btn-light border fw-semibold px-4" @onclick="CloseModal">Cancelar</button>
+                    <button type="submit" class="btn btn-action-primary shadow-sm fw-semibold px-4 d-flex align-items-center gap-2">
+                        <i class="bi bi-check-circle-fill"></i> Guardar Usuario
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<style>
+    /* Variables y Ajustes Premium */
+    .text-gradient {
+        background: linear-gradient(135deg, #1b6ec2, #0d3b66);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    /* Fuentes y Utilidades */
+    .font-size-sm { font-size: 0.875rem; }
+    .font-size-xs { font-size: 0.75rem; letter-spacing: 0.05em; }
+
+    /* Tarjetas de Estadística */
+    .stat-card {
+        border-radius: 12px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06) !important;
+    }
+    .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+    }
+    .bg-primary-soft { background-color: #e8f1fc; }
+    .bg-success-soft { background-color: #e6f6ec; }
+    .bg-secondary-soft { background-color: #f0f2f5; }
+    .bg-warning-soft { background-color: #fef6e5; }
+
+    /* Buscador */
+    .search-box .input-group-text {
+        border-top-left-radius: 8px;
+        border-bottom-left-radius: 8px;
+    }
+    .search-box .form-control {
+        border-top-right-radius: 8px;
+        border-bottom-right-radius: 8px;
+    }
+    .search-box .form-control:focus {
+        box-shadow: none;
+        background-color: #fff !important;
+        border: 1px solid #1b6ec2 !important;
+    }
+
+    /* Tabla */
+    table thead th {
+        font-weight: 700;
+        border-bottom: 2px solid #edf2f9;
+    }
+    table tbody tr {
+        transition: background-color 0.15s ease;
+    }
+    table tbody tr:hover {
+        background-color: #f8fbff;
+    }
+
+    /* Avatares */
+    .avatar-circle {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        color: #fff;
+    }
+    .avatar-blue { background: linear-gradient(135deg, #1b6ec2, #0ea5e9); }
+    .avatar-green { background: linear-gradient(135deg, #10b981, #059669); }
+    .avatar-purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+    .avatar-orange { background: linear-gradient(135deg, #f97316, #ea580c); }
+
+    /* Badges */
+    .badge-custom {
+        padding: 6px 12px;
+        border-radius: 30px;
+        font-weight: 600;
+        font-size: 0.75rem;
+    }
+    .badge-role-admin { background-color: #fef2f2; color: #ef4444; border: 1px solid #fee2e2; }
+    .badge-role-editor { background-color: #fef7e6; color: #d97706; border: 1px solid #fef3c7; }
+    .badge-role-support { background-color: #ecfeff; color: #0891b2; border: 1px solid #cffafe; }
+    .badge-role-user { background-color: #eff6ff; color: #2563eb; border: 1px solid #dbeafe; }
+
+    /* Indicador de pulso activo/inactivo */
+    .pulse-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .pulse-indicator.bg-success {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+        animation: pulse 2s infinite;
+    }
+    @@keyframes pulse {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    /* Botones de acción */
+    .btn-action-primary {
+        background-color: #1b6ec2;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        transition: background-color 0.2s ease;
+    }
+    .btn-action-primary:hover {
+        background-color: #155596;
+        color: #fff;
+    }
+    .btn-icon-edit, .btn-icon-delete {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        border: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+    }
+    .btn-icon-edit {
+        background-color: #f0f7ff;
+        color: #1b6ec2;
+    }
+    .btn-icon-edit:hover {
+        background-color: #1b6ec2;
+        color: #fff;
+    }
+    .btn-icon-delete {
+        background-color: #fef2f2;
+        color: #ef4444;
+    }
+    .btn-icon-delete:hover {
+        background-color: #ef4444;
+        color: #fff;
+    }
+
+    /* Modales Personalizados */
+    .custom-modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 1040;
+        background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+    }
+    .custom-modal-dialog {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1050;
+        width: 100%;
+        max-width: 500px;
+        padding: 15px;
+    }
+    .modal-content-anim {
+        animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        border-radius: 14px;
+        overflow: hidden;
+    }
+    @@keyframes slideUp {
+        from { transform: translateY(30px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* Switch Custom styling */
+    .custom-switch {
+        display: flex;
+        align-items: center;
+    }
+    .custom-switch .form-check-input {
+        width: 2.5em;
+        height: 1.25em;
+        cursor: pointer;
+    }
+
+    /* Borde punteado para vacío */
+    .border-dashed {
+        border: 2px dashed #d0d7de !important;
+        border-radius: 12px;
+    }
+    .empty-state-icon {
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 30px;
+    }
+
+    /* Spinner Custom */
+    .spinner-custom {
+        width: 48px;
+        height: 48px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #1b6ec2;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @@keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    
+    .alert-custom-danger {
+        border-left: 4px solid #ef4444;
+        background-color: #fef2f2;
+        border-radius: 8px;
+    }
+</style>
+
+@code {
+    private List<User>? users;
+    private User editingUser = new();
+    private bool isEditing = false;
+    private bool showModal = false;
+    private string errorMessage = "";
+    private bool isLoading = true;
+    private string searchQuery = "";
+
+    private IEnumerable<User> FilteredUsers =>
+        users == null ? Enumerable.Empty<User>() :
+        users.Where(u => 
+            string.IsNullOrEmpty(searchQuery) ||
+            u.Name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+            u.Email.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+            u.Role.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+        );
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = "";
+            users = await Http.GetFromJsonAsync<List<User>>("api/users");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error de conexión con el servidor. Verifique si la base de datos PostgreSQL está activa e intente nuevamente. Detalle: {ex.Message}";
+            Console.WriteLine(ex);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OpenCreateModal()
+    {
+        editingUser = new User { Role = "Usuario", IsActive = true };
+        isEditing = false;
+        errorMessage = "";
+        showModal = true;
+    }
+
+    private void OpenEditModal(User user)
+    {
+        editingUser = new User
+        {
+            Id = user.Id,
+            Name = user.Name,
+            Email = user.Email,
+            Role = user.Role,
+            IsActive = user.IsActive,
+            CreatedAt = user.CreatedAt
+        };
+        isEditing = true;
+        errorMessage = "";
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private async Task SaveUser()
+    {
+        try
+        {
+            errorMessage = "";
+            HttpResponseMessage response;
+
+            if (isEditing)
+            {
+                response = await Http.PutAsJsonAsync($"api/users/{editingUser.Id}", editingUser);
+            }
+            else
+            {
+                response = await Http.PostAsJsonAsync("api/users", editingUser);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                await LoadUsers();
+                showModal = false;
+            }
+            else
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                errorMessage = $"Error del servidor al guardar el usuario. Estado: {response.StatusCode}. Detalle: {content}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error al enviar los datos al servidor: {ex.Message}";
+            Console.WriteLine(ex);
+        }
+    }
+
+    private async Task DeleteUser(int id)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "¿Está seguro de que desea eliminar permanentemente este usuario de la base de datos PostgreSQL?");
+        if (confirmed)
+        {
+            try
+            {
+                errorMessage = "";
+                var response = await Http.DeleteAsync($"api/users/{id}");
+                if (response.IsSuccessStatusCode)
+                {
+                    await LoadUsers();
+                }
+                else
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    errorMessage = $"Error del servidor al eliminar el usuario. Estado: {response.StatusCode}. Detalle: {content}";
+                }
+            }
+            catch (Exception ex)
+            {
+                errorMessage = $"Error al eliminar el usuario: {ex.Message}";
+                Console.WriteLine(ex);
+            }
+        }
+    }
+
+    private string GetRoleBadgeClass(string role)
+    {
+        return role switch
+        {
+            "Administrador" => "badge-role-admin",
+            "Editor" => "badge-role-editor",
+            "Soporte" => "badge-role-support",
+            _ => "badge-role-user"
+        };
+    }
+
+    private string GetAvatarColorClass(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "avatar-blue";
+        int hash = name.GetHashCode();
+        int index = Math.Abs(hash) % 4;
+        return index switch
+        {
+            0 => "avatar-blue",
+            1 => "avatar-green",
+            2 => "avatar-purple",
+            3 => "avatar-orange",
+            _ => "avatar-blue"
+        };
+    }
+}

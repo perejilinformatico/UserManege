@@ -1,0 +1,11 @@
+## Ignore Visual Studio temporary files, build results, and databases
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+appsettings.Development.json

@@ -1,0 +1,20 @@
+[
+  {
+    "Name": "Santi Cussit",
+    "Email": "santi.cussit@example.com",
+    "Role": "Administrador",
+    "IsActive": true
+  },
+  {
+    "Name": "Juan Pérez",
+    "Email": "juan.perez@example.com",
+    "Role": "Usuario",
+    "IsActive": true
+  },
+  {
+    "Name": "María López",
+    "Email": "maria.lopez@example.com",
+    "Role": "Editor",
+    "IsActive": false
+  }
+]
